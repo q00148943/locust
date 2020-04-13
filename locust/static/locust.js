@@ -36,8 +36,6 @@ $(".close_link").click(function(event) {
     $(this).parent().parent().hide();
 });
 
-var alternate = false;
-
 $("ul.tabs").tabs("div.panes > div").on("onClick", function(event) {
     if (event.target == $(".chart-tab-link")[0]) {
         // trigger resizing of charts
@@ -50,6 +48,12 @@ $("ul.tabs").tabs("div.panes > div").on("onClick", function(event) {
 var stats_tpl = $('#stats-template');
 var errors_tpl = $('#errors-template');
 var exceptions_tpl = $('#exceptions-template');
+var workers_tpl = $('#worker-template');
+
+function setHostName(hostname) {
+    hostname = hostname || "";
+    $('#host_url').text(hostname);
+}
 
 $('#swarm_form').submit(function(event) {
     event.preventDefault();
@@ -63,6 +67,7 @@ $('#swarm_form').submit(function(event) {
                 $("a.new_test").fadeOut();
                 $("a.edit_test").fadeIn();
                 $(".user_count").fadeIn();
+                setHostName(response.host);
             }
         }
     );
@@ -75,6 +80,7 @@ $('#edit_form').submit(function(event) {
             if (response.success) {
                 $("body").attr("class", "hatching");
                 $("#edit").fadeOut();
+                setHostName(response.host);
             }
         }
     );
@@ -96,60 +102,76 @@ var sortBy = function(field, reverse, primer){
 }
 
 // Sorting by column
+var alternate = false; //used by jqote2.min.js
 var sortAttribute = "name";
+var WorkerSortAttribute = "id";
 var desc = false;
+var WorkerDesc = false;
 var report;
-$(".stats_label").click(function(event) {
+
+function renderTable(report) {
+    var totalRow = report.stats.pop();
+    totalRow.is_aggregated = true;
+    var sortedStats = (report.stats).sort(sortBy(sortAttribute, desc));
+    sortedStats.push(totalRow);
+    $('#stats tbody').empty();
+    $('#errors tbody').empty();
+
+    window.alternate = false;
+    $('#stats tbody').jqoteapp(stats_tpl, sortedStats);
+
+    window.alternate = false;
+    $('#errors tbody').jqoteapp(errors_tpl, (report.errors).sort(sortBy(sortAttribute, desc)));
+
+    $("#total_rps").html(Math.round(report.total_rps*100)/100);
+    $("#fail_ratio").html(Math.round(report.fail_ratio*100));
+    $("#status_text").html(report.state);
+    $("#userCount").html(report.user_count);
+}
+
+function renderWorkerTable(report) {
+    if (report.workers) {
+        var workers = (report.workers).sort(sortBy(WorkerSortAttribute, WorkerDesc));
+        $("#workers tbody").empty();
+        window.alternate = false;
+        $("#workers tbody").jqoteapp(workers_tpl, workers);
+        $("#workerCount").html(workers.length);
+    }
+}
+
+
+$("#stats .stats_label").click(function(event) {
     event.preventDefault();
     sortAttribute = $(this).attr("data-sortkey");
     desc = !desc;
+    renderTable(window.report);
+});
 
-    $('#stats tbody').empty();
-    $('#errors tbody').empty();
-    alternate = false;
-    totalRow = report.stats.pop()
-    sortedStats = (report.stats).sort(sortBy(sortAttribute, desc))
-    sortedStats.push(totalRow)
-    $('#stats tbody').jqoteapp(stats_tpl, sortedStats);
-    alternate = false;
-    $('#errors tbody').jqoteapp(errors_tpl, (report.errors).sort(sortBy(sortAttribute, desc)));
+$("#workers .stats_label").click(function(event) {
+    event.preventDefault();
+    WorkerSortAttribute = $(this).attr("data-sortkey");
+    WorkerDesc = !WorkerDesc;
+    renderWorkerTable(window.report);
 });
 
 // init charts
-var rpsChart = new LocustLineChart($(".charts-container"), "Total Requests per Second", ["RPS"], "reqs/s");
-var responseTimeChart = new LocustLineChart($(".charts-container"), "Average Response Time", ["Average Response Time"], "ms");
+var rpsChart = new LocustLineChart($(".charts-container"), "Total Requests per Second", ["RPS", "Failures/s"], "reqs/s", ['#00ca5a', '#ff6d6d']);
+var responseTimeChart = new LocustLineChart($(".charts-container"), "Response Times (ms)", ["Median Response Time", "95% percentile"], "ms");
 var usersChart = new LocustLineChart($(".charts-container"), "Number of Users", ["Users"], "users");
 
 function updateStats() {
-    $.get('/stats/requests', function (data) {
-        report = JSON.parse(data);
-        $("#total_rps").html(Math.round(report.total_rps*100)/100);
-        //$("#fail_ratio").html(Math.round(report.fail_ratio*10000)/100);
-        $("#fail_ratio").html(Math.round(report.fail_ratio*100));
-        $("#status_text").html(report.state);
-        $("#userCount").html(report.user_count);
+    $.get('./stats/requests', function (report) {
+        window.report = report;
 
-        if (typeof report.slave_count !== "undefined")
-            $("#slaveCount").html(report.slave_count)
-
-        $('#stats tbody').empty();
-        $('#errors tbody').empty();
-
-        alternate = false;
-
-        totalRow = report.stats.pop()
-        sortedStats = (report.stats).sort(sortBy(sortAttribute, desc))
-        sortedStats.push(totalRow)
-        $('#stats tbody').jqoteapp(stats_tpl, sortedStats);
-        alternate = false;
-        $('#errors tbody').jqoteapp(errors_tpl, (report.errors).sort(sortBy(sortAttribute, desc)));
+        renderTable(report);
+        renderWorkerTable(report);
 
         if (report.state !== "stopped"){
             // get total stats row
             var total = report.stats[report.stats.length-1];
             // update charts
-            rpsChart.addValue([total.current_rps]);
-            responseTimeChart.addValue([total.avg_response_time]);
+            rpsChart.addValue([total.current_rps, total.current_fail_per_sec]);
+            responseTimeChart.addValue([report.current_response_time_percentile_50, report.current_response_time_percentile_95]);
             usersChart.addValue([report.user_count]);
         }
 
@@ -159,7 +181,7 @@ function updateStats() {
 updateStats();
 
 function updateExceptions() {
-    $.get('/exceptions', function (data) {
+    $.get('./exceptions', function (data) {
         $('#exceptions tbody').empty();
         $('#exceptions tbody').jqoteapp(exceptions_tpl, data.exceptions);
         setTimeout(updateExceptions, 5000);

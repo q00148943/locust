@@ -1,15 +1,14 @@
 import re
 import time
-from six.moves.urllib.parse import urlparse, urlunparse
-import six
 
 import requests
-from requests import Response, Request
+from requests import Request, Response
 from requests.auth import HTTPBasicAuth
-from requests.exceptions import (RequestException, MissingSchema,
-    InvalidSchema, InvalidURL)
+from requests.exceptions import (InvalidSchema, InvalidURL, MissingSchema,
+                                 RequestException)
 
-from . import events
+from urllib.parse import urlparse, urlunparse
+
 from .exception import CatchResponseError, ResponseError
 
 absolute_http_url_regexp = re.compile(r"^https?://", re.I)
@@ -46,10 +45,12 @@ class HttpSession(requests.Session):
                            response, even if the response code is ok (2xx). The opposite also works, one can use catch_response to catch a request
                            and then mark it as successful even if the response code was not (i.e 500 or 404).
     """
-    def __init__(self, base_url, *args, **kwargs):
+    def __init__(self, base_url, request_success, request_failure, *args, **kwargs):
         super(HttpSession, self).__init__(*args, **kwargs)
-
+        
         self.base_url = base_url
+        self.request_success = request_success
+        self.request_failure = request_failure
         
         # Check for basic authentication
         parsed_url = urlparse(self.base_url)
@@ -89,7 +90,7 @@ class HttpSession(requests.Session):
         :param cookies: (optional) Dict or CookieJar object to send with the :class:`Request`.
         :param files: (optional) Dictionary of ``'filename': file-like-objects`` for multipart encoding upload.
         :param auth: (optional) Auth tuple or callable to enable Basic/Digest/Custom HTTP Auth.
-        :param timeout: (optional) How long to wait for the server to send data before giving up, as a float, 
+        :param timeout: (optional) How long in seconds to wait for the server to send data before giving up, as a float, 
             or a (`connect timeout, read timeout <user/advanced.html#timeouts>`_) tuple.
         :type timeout: float or tuple
         :param allow_redirects: (optional) Set to True by default.
@@ -113,7 +114,7 @@ class HttpSession(requests.Session):
         response = self._send_request_safe_mode(method, url, **kwargs)
         
         # record the consumed time
-        request_meta["response_time"] = int((time.time() - request_meta["start_time"]) * 1000)
+        request_meta["response_time"] = (time.time() - request_meta["start_time"]) * 1000
         
     
         request_meta["name"] = name or (response.history and response.history[0] or response).request.path_url
@@ -123,28 +124,37 @@ class HttpSession(requests.Session):
         if kwargs.get("stream", False):
             request_meta["content_size"] = int(response.headers.get("content-length") or 0)
         else:
-            request_meta["content_size"] = len(response.content or "")
+            request_meta["content_size"] = len(response.content or b"")
         
         if catch_response:
             response.locust_request_meta = request_meta
-            return ResponseContextManager(response)
+            return ResponseContextManager(response, request_success=self.request_success, request_failure=self.request_failure)
         else:
+            if name:
+                # Since we use the Exception message when grouping failures, in order to not get 
+                # multiple failure entries for different URLs for the same name argument, we need 
+                # to temporarily override the reponse.url attribute
+                orig_url = response.url
+                response.url = name
             try:
                 response.raise_for_status()
             except RequestException as e:
-                events.request_failure.fire(
+                self.request_failure.fire(
                     request_type=request_meta["method"], 
                     name=request_meta["name"], 
                     response_time=request_meta["response_time"], 
+                    response_length=request_meta["content_size"],
                     exception=e, 
                 )
             else:
-                events.request_success.fire(
+                self.request_success.fire(
                     request_type=request_meta["method"],
                     name=request_meta["name"],
                     response_time=request_meta["response_time"],
                     response_length=request_meta["content_size"],
                 )
+            if name:
+                response.url = orig_url
             return response
     
     def _send_request_safe_mode(self, method, url, **kwargs):
@@ -177,9 +187,11 @@ class ResponseContextManager(LocustResponse):
     
     _is_reported = False
     
-    def __init__(self, response):
+    def __init__(self, response, request_success, request_failure):
         # copy data from response to this object
         self.__dict__ = response.__dict__
+        self._request_success = request_success
+        self._request_failure = request_failure
     
     def __enter__(self):
         return self
@@ -214,7 +226,7 @@ class ResponseContextManager(LocustResponse):
                 if response.status_code == 404:
                     response.success()
         """
-        events.request_success.fire(
+        self._request_success.fire(
             request_type=self.locust_request_meta["method"],
             name=self.locust_request_meta["name"],
             response_time=self.locust_request_meta["response_time"],
@@ -232,16 +244,17 @@ class ResponseContextManager(LocustResponse):
         Example::
         
             with self.client.get("/", catch_response=True) as response:
-                if response.content == "":
+                if response.content == b"":
                     response.failure("No data")
         """
-        if isinstance(exc, six.string_types):
+        if isinstance(exc, str):
             exc = CatchResponseError(exc)
         
-        events.request_failure.fire(
+        self._request_failure.fire(
             request_type=self.locust_request_meta["method"],
             name=self.locust_request_meta["name"],
             response_time=self.locust_request_meta["response_time"],
+            response_length=self.locust_request_meta["content_size"],
             exception=exc,
         )
         self._is_reported = True

@@ -7,32 +7,46 @@ Locust class
 ============
 
 .. autoclass:: locust.core.Locust
-	:members: min_wait, max_wait, task_set, weight
+    :members: wait_time, tasks, weight, abstract, on_start, on_stop, wait
 
 HttpLocust class
 ================
 
 .. autoclass:: locust.core.HttpLocust
-	:members: min_wait, max_wait, task_set, client
+    :members: wait_time, tasks, client, abstract
 
 
 TaskSet class
 =============
 
 .. autoclass:: locust.core.TaskSet
-	:members: locust, parent, min_wait, max_wait, client, tasks, interrupt, schedule_task
+    :members: locust, parent, wait_time, client, tasks, interrupt, schedule_task, on_start, on_stop, wait
 
 task decorator
 ==============
 
 .. autofunction:: locust.core.task
 
+SequentialTaskSet class
+=======================
+
+.. autoclass:: locust.sequential_taskset.SequentialTaskSet
+    :members: locust, parent, wait_time, client, tasks, interrupt, schedule_task, on_start, on_stop
+
+
+.. _wait_time_functions:
+
+Built in wait_time functions
+============================
+
+.. automodule:: locust.wait_time
+    :members: between, constant, constant_pacing
 
 HttpSession class
 =================
 
 .. autoclass:: locust.clients.HttpSession
-	:members: __init__, request, get, post, delete, put, head, options, patch
+    :members: __init__, request, get, post, delete, put, head, options, patch
 
 Response class
 ==============
@@ -44,14 +58,14 @@ for locust since it's so central when writing locust load tests. You can also lo
 `requests documentation <http://python-requests.org>`_.
 
 .. autoclass:: requests.Response
-	:inherited-members:
-	:noindex:
+    :inherited-members:
+    :noindex:
 
 ResponseContextManager class
 ============================
 
 .. autoclass:: locust.clients.ResponseContextManager
-	:members: success, failure
+    :members: success, failure
 
 
 InterruptTaskSet Exception
@@ -59,20 +73,35 @@ InterruptTaskSet Exception
 .. autoexception:: locust.exception.InterruptTaskSet
 
 
+Environment class
+=================
+.. autoclass:: locust.env.Environment
+    :members:
+
+
 .. _events:
 
 Event hooks
 ===========
 
-The event hooks are instances of the **locust.events.EventHook** class:
+Locust provide event hooks that can be used to extend Locus in various ways. 
 
-.. autoclass:: locust.events.EventHook
+The following event hooks are available under :py:attr:`Environment.events <locust.env.Environment.events>`, 
+and there's also a reference to these events under ``locust.events`` that can be used at the module level 
+of locust scripts (since the Environment instance hasn't been created when the locustfile is imported).
 
-Available hooks
+.. autoclass:: locust.event.Events
+    :members:
+
+
+EventHook class
 ---------------
 
-The following event hooks are available under the **locust.events** module:
+The event hooks are instances of the **locust.events.EventHook** class:
 
-.. automodule:: locust.events
-	:members: request_success, request_failure, locust_error, report_to_master, slave_report, hatch_complete, quitting
+.. autoclass:: locust.event.EventHook
 
+.. note::
+
+    It's highly recommended that you add a wildcard keyword argument in your event listeners
+    to prevent your code from breaking if new arguments are added in a future version.

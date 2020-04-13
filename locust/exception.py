@@ -7,6 +7,9 @@ class ResponseError(Exception):
 class CatchResponseError(Exception):
     pass
 
+class MissingWaitTimeError(LocustError):
+    pass
+
 class InterruptTaskSet(Exception):
     """
     Exception that will interrupt a Locust when thrown inside a task
@@ -34,3 +37,17 @@ class RescheduleTaskImmediately(Exception):
     """
     When raised in a Locust task, another locust task will be rescheduled immediately
     """
+
+class RPCError(Exception):
+    """
+    Exception that shows bad or broken network.
+
+    When raised from zmqrpc, RPC should be reestablished.
+    """
+
+class AuthCredentialsError(ValueError):
+    """
+    Exception when the auth credentials provided
+    are not in the correct format
+    """
+    pass

@@ -9,16 +9,35 @@
 # serve to show the default value.
 
 import os
+import subprocess
+
+
+
+# Run command `locust --help` and store output in cli-help-output.txt which is included in the docs
+cli_help_output_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), "cli-help-output.txt")
+print("Running `locust --help` command and storing output in %s" % cli_help_output_file)
+help_output = subprocess.check_output(["locust", "--help"]).decode("utf-8")
+with open(cli_help_output_file, "w") as f:
+    f.write(help_output)
+
+
+# The default replacements for |version| and |release|, also used in various
+# other places throughout the built documents.
+#
+# The short X.Y version.
+from locust import __version__
 
 # General configuration
 # ---------------------
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.intersphinx"]
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.intersphinx", 'sphinx_search.extension']
 
 # autoclass options
 #autoclass_content = "both"
+
+autodoc_typehints = 'none' # I would have liked to use 'description' but unfortunately it too is very verbose
 
 # Add any paths that contain templates here, relative to this directory.
 #templates_path = ["_templates"]
@@ -35,14 +54,9 @@ project = 'Locust'
 
 # Intersphinx config
 intersphinx_mapping = {
-    'requests': ('http://requests.readthedocs.org/en/latest/', None),
+    'requests': ('https://requests.readthedocs.io/en/latest/', None),
 }
 
-# The default replacements for |version| and |release|, also used in various
-# other places throughout the built documents.
-#
-# The short X.Y version.
-from locust import __version__
 
 # The full version, including alpha/beta/rc tags.
 release = __version__
